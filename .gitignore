@@ -1,0 +1,7 @@
+.claude/
+work/data/
+work/.venv/
+work/__pycache__/
+work/enrich/in/
+work/enrich/out/
+*.png
