@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Stays near JR Shinjuku · Nov 15 2026 · under ¥20k</title>
+<title>Stays near Shinjuku, Shibuya, Gotanda &amp; Hamamatsucho · Nov 15 2026 · under ¥20k</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" crossorigin="">
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" crossorigin="">
@@ -14,16 +14,19 @@
 
 <aside id="filters" class="box">
   <div class="filters-head">
-    <h1>Near JR Shinjuku · Nov 15, 1 night</h1>
+    <h1>Tokyo stays · Nov 15, 1 night</h1>
     <button id="filters-toggle" class="icon-btn" title="Show or hide filters" aria-expanded="true">–</button>
   </div>
   <div id="filters-body">
-    <p class="count"><b id="count">0</b> of <span id="total">0</span> stays shown<br><span class="muted">2 adults, 1 room, within 2 km of JR Shinjuku. Prices are the room total for the night, tax included.</span></p>
+    <p class="count"><b id="count">0</b> of <span id="total">0</span> stays shown<br><span class="muted">2 adults, 1 room, within 2 km of JR Shinjuku, Shibuya, Gotanda or Hamamatsucho (monorail terminal). Prices are the room total for the night, tax included.</span></p>
     <label class="row" for="price">Max price <b id="price-val"></b></label>
     <input id="price" type="range" min="7000" max="20000" step="500" value="20000">
     <label class="row" for="rating">Min rating <b id="rating-val"></b></label>
     <input id="rating" type="range" min="2.5" max="4.5" step="0.1" value="2.5">
-    <label class="row" for="dist">Distance <b id="dist-val"></b></label>
+    <div class="row">Near</div>
+    <div class="chips" id="stations"></div>
+    <div class="zoom" id="zoom"></div>
+    <label class="row" for="dist">Distance from the station <b id="dist-val"></b></label>
     <input id="dist" type="range" min="0.5" max="2" step="0.1" value="2">
     <div class="row">Meals</div>
     <div class="seg" id="meals">

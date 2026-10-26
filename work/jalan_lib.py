@@ -128,7 +128,7 @@ class Tab:
         return r.get("result", {}).get("value")
 
     def goto(self, url, timeout=25.0):
-        cdp("Page.navigate", session_id=self.sid, url=url)
+        cdp("Page.navigate", session_id=self.sid, url=url, _response_timeout=60)  # slow responses take longer than the 5 s default
         time.sleep(0.4)
         deadline = time.time() + timeout
         while time.time() < deadline:
@@ -234,5 +234,7 @@ def scrape_property(tab, yad_no):
     prop["plans"] = [rows[k] for k in want]
     prop["planListCount"], prop["planListPages"] = data.get("count"), data.get("pages")
     prop["fetches"] = 2 + len(want)
-    prop["blocked"] = bool(lst.get("blocked")) or any(x.get("blocked") for x in details)
+    # A 503 (rate limit) looks like an empty plan list; count it as blocked so the caller retries
+    prop["blocked"] = (bool(lst.get("blocked")) or lst.get("status") != 200
+                       or any(x.get("blocked") or x.get("status") != 200 for x in details))
     return prop

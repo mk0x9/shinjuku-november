@@ -1,8 +1,10 @@
-/* Stays near JR Shinjuku: pins, clusters, hover card, side panel, client-side filters. Data: window.STAYS (data.js). */
+/* Stays near JR Shinjuku, Shibuya, Gotanda and Hamamatsucho: pins, clusters, hover card, side panel, client-side filters. Data: window.STAYS (data.js). */
 (() => {
   const DATA = window.STAYS || [];
   const IMG_BASE = window.IMG_BASE || "";
-  const STATION = window.STATION || { lat: 35.6896, lng: 139.7006, radiusKm: 2 };
+  const STATIONS = window.STATIONS || [];
+  const RADIUS_KM = window.RADIUS_KM || 2;
+  const stationOf = (r) => STATIONS.find((s) => s.key === r.station) || { name: "station" };
   const TYPES = {
     business_hotel: { label: "Business hotel", color: "#2563eb" }, city_hotel: { label: "City hotel", color: "#4338ca" },
     capsule_hotel: { label: "Capsule / pod", color: "#0f766e" }, hostel: { label: "Hostel", color: "#15803d" },
@@ -13,9 +15,11 @@
   const BANDS = [[10000, "var(--p1)", "< ¥10k"], [14000, "var(--p2)", "¥10-14k"], [17000, "var(--p3)", "¥14-17k"], [Infinity, "var(--p4)", "¥17-20k"]];
   const SCORES = [["room", "Room"], ["bath", "Bath"], ["breakfast", "Breakfast"], ["service", "Service"], ["clean", "Clean"]];
   const TOUCH = window.matchMedia("(hover: none)").matches;
-  const PRICE_MAX = 20000, RATING_ANY = 2.5, DIST_MAX = STATION.radiusKm;
+  const PRICE_MAX = 20000, RATING_ANY = 2.5, DIST_MAX = RADIUS_KM;
   const typesPresent = Object.keys(TYPES).filter((t) => DATA.some((r) => r.type === t));
-  const DEFAULTS = { price: PRICE_MAX, rating: RATING_ANY, dist: DIST_MAX, meals: "any", priv: false, mixed: false, types: typesPresent, q: "", colorBy: "type" };
+  const stationKeys = STATIONS.map((s) => s.key);
+  const DEFAULTS = { price: PRICE_MAX, rating: RATING_ANY, dist: DIST_MAX, meals: "any", priv: false, mixed: false, types: typesPresent,
+    stations: stationKeys, q: "", colorBy: "type" };
 
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -37,7 +41,7 @@
   const cancelText = (p) => (p.cancel === "non-refundable" ? "Non-refundable" : p.cancel ? `Free cancellation until ${fmtDate(p.cancel)}` : "");
   const fmtDate = (d) => new Date(d + "T00:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 
-  const state = { ...DEFAULTS, types: new Set(DEFAULTS.types) };
+  const state = { ...DEFAULTS, types: new Set(DEFAULTS.types), stations: new Set(DEFAULTS.stations) };
 
   function planOk(p) {
     if (p.price > state.price) return false;
@@ -49,10 +53,11 @@
   const qualifyingPlans = (r) => (r.plans || []).filter(planOk).sort((a, b) => a.price - b.price);
   function passes(r) {
     if (!state.types.has(r.type)) return false;
+    if (!state.stations.has(r.station)) return false;
     if (r.dist > state.dist + 1e-9) return false;
     if (state.rating > RATING_ANY && (r.rating || 0) < state.rating - 1e-9) return false;
     if (state.q) {
-      const hay = `${r.name} ${r.nameJp} ${r.summary || ""} ${r.access || ""} ${r.address || ""}`.toLowerCase();
+      const hay = `${r.name} ${r.nameJp} ${r.summary || ""} ${r.access || ""} ${r.address || ""} ${stationOf(r).name}`.toLowerCase();
       if (!hay.includes(state.q.toLowerCase())) return false;
     }
     return true;
@@ -60,7 +65,7 @@
   const pinColor = (r, price) => (state.colorBy === "price" ? BANDS.find(([max]) => price < max)[1] : typeOf(r).color);
 
   // Map
-  const map = (window.stayMap = L.map("map", { zoomControl: false, maxZoom: 19 }).setView([STATION.lat, STATION.lng], 14));
+  const map = (window.stayMap = L.map("map", { zoomControl: false, maxZoom: 19 }).setView([STATIONS[0].lat, STATIONS[0].lng], 14));
   L.control.zoom({ position: "bottomright" }).addTo(map);
   // Base maps. Default: the OpenFreeMap vector map (MapLibre GL) with labels switched to English. Raster options keep local-language labels.
   // tile.openstreetmap.org refuses requests without a Referer (what a file:// page sends), so from disk the
@@ -84,7 +89,7 @@
   const baseTokens = Object.fromEntries(BASES.map(([k]) => [k, Object.assign(L.layerGroup(), { baseKey: k })]));
   const circleLayer = L.layerGroup();
   const layersCtl = L.control.layers(Object.fromEntries(BASES.map(([k, label]) => [label, baseTokens[k]])),
-    { "2 km circle &amp; JR Shinjuku": circleLayer }, { position: "bottomright" }).addTo(map);
+    { "2 km circles &amp; stations": circleLayer }, { position: "bottomright" }).addTo(map);
   let baseKey = DEFAULT_BASE, shownBase = null, vector = null, vectorState = "pending", vectorOk = false, vectorWatch = 0;
   baseTokens[baseKey].addTo(map);
 
@@ -206,13 +211,22 @@
       .catch((e) => { clearTimeout(abort); vectorFailed(e.message || String(e)); });
   }
 
-  // The 2 km search radius and the JR Shinjuku station marker (an overlay in the layer switcher, on by default).
+  // The 2 km search radius around each station and the station markers (an overlay in the layer switcher, on by default).
+  // Clicking a station marker zooms to its circle.
   map.createPane("ring").style.zIndex = 390;
-  L.circle([STATION.lat, STATION.lng], { radius: STATION.radiusKm * 1000, pane: "ring", interactive: false,
-    color: "#111827", weight: 2, opacity: 0.7, dashArray: "6 6", fillColor: "#111827", fillOpacity: 0.04 }).addTo(circleLayer);
-  L.marker([STATION.lat, STATION.lng], { keyboard: false, zIndexOffset: -1000,
-    icon: L.divIcon({ className: "pin-wrap", iconSize: [0, 0], iconAnchor: [0, 0], html: '<div class="station"><b>JR</b> Shinjuku Sta.</div>' }) })
-    .bindTooltip("JR Shinjuku station · centre of the 2 km circle", { direction: "top", offset: [0, -14] }).addTo(circleLayer);
+  const circleBounds = (keys) => keys.map((k) => STATIONS.find((s) => s.key === k)).filter(Boolean)
+    .map((s) => L.latLng(s.lat, s.lng).toBounds(RADIUS_KM * 2000 * 1.05)).reduce((a, b) => a.extend(b), L.latLngBounds([]));
+  // Keep the circles clear of the filter box when it is open on a wide screen.
+  const leftPad = () => (window.innerWidth > 700 && !$("filters").classList.contains("collapsed") ? $("filters").offsetWidth + 20 : 10);
+  const zoomTo = (keys) => { const b = circleBounds(keys); if (b.isValid()) map.fitBounds(b, { paddingTopLeft: [leftPad(), 10], paddingBottomRight: [10, 10] }); };
+  for (const s of STATIONS) {
+    L.circle([s.lat, s.lng], { radius: RADIUS_KM * 1000, pane: "ring", interactive: false,
+      color: "#111827", weight: 2, opacity: 0.7, dashArray: "6 6", fillColor: "#111827", fillOpacity: 0.04 }).addTo(circleLayer);
+    L.marker([s.lat, s.lng], { keyboard: false, zIndexOffset: -1000,
+      icon: L.divIcon({ className: "pin-wrap", iconSize: [0, 0], iconAnchor: [0, 0], html: `<div class="station">${s.label} Sta.</div>` }) })
+      .bindTooltip(`${s.name} station · centre of a ${RADIUS_KM} km circle · click to zoom`, { direction: "top", offset: [0, -14] })
+      .on("click", () => zoomTo([s.key])).addTo(circleLayer);
+  }
   circleLayer.addTo(map);
 
   const clusters = L.markerClusterGroup({
@@ -291,7 +305,7 @@
     return `<h2>${esc(r.name)}</h2><div class="jp">${esc(r.nameJp)}</div>
       <div class="badges"><span class="stars">★ ${r.rating ? r.rating.toFixed(1) : "—"}</span>
       <span class="muted">${r.reviews ? r.reviews.toLocaleString("en-US") + " reviews" : "no reviews yet"}</span>${badgeHtml(r)}
-      <span class="muted">· ${r.dist.toFixed(1)} km from JR Shinjuku</span></div>${scoresHtml(r)}`;
+      <span class="muted">· ${r.dist.toFixed(1)} km from ${esc(stationOf(r).name)}</span></div>${scoresHtml(r)}`;
   }
   function roomLine(p) {
     return [p.occupancy === "shared" ? "Shared" : null, p.bedding, p.size, BATHROOM[p.bathroom] ?? p.bathroom]
@@ -454,8 +468,13 @@
   // Filters
   $("types").innerHTML = typesPresent.map((t) => `<label class="chip"><input type="checkbox" value="${t}" checked><span data-color="${TYPES[t].color}">${
     esc(TYPES[t].label)} <small>${DATA.filter((r) => r.type === t).length}</small></span></label>`).join("");
+  $("stations").innerHTML = STATIONS.map((s) => `<label class="chip"><input type="checkbox" value="${s.key}" checked><span data-color="#111827">${
+    esc(s.name)} <small>${DATA.filter((r) => r.station === s.key).length}</small></span></label>`).join("");
+  $("zoom").innerHTML = "Zoom to: " + STATIONS.map((s) => `<button class="link-btn" data-zoom="${s.key}">${esc(s.name.replace(/^JR /, ""))}</button>`).join("") +
+    `<button class="link-btn" data-zoom="all">All</button>`;
+  $("zoom").onclick = (e) => { const b = e.target.closest("[data-zoom]"); if (b) zoomTo(b.dataset.zoom === "all" ? stationKeys : [b.dataset.zoom]); };
   function paintChips() {
-    document.querySelectorAll("#types input").forEach((i) => {
+    document.querySelectorAll("#types input, #stations input").forEach((i) => {
       const s = i.nextElementSibling;
       s.style.background = i.checked ? s.dataset.color : "";
     });
@@ -468,7 +487,7 @@
   function syncLabels() {
     $("price-val").textContent = state.price >= PRICE_MAX ? "under ¥20,000" : "≤ " + yen(state.price);
     $("rating-val").textContent = state.rating <= RATING_ANY ? "any (incl. unrated)" : state.rating.toFixed(1) + "+";
-    $("dist-val").textContent = state.dist >= DIST_MAX ? "≤ 2 km (all)" : `≤ ${state.dist.toFixed(1)} km`;
+    $("dist-val").textContent = state.dist >= DIST_MAX ? `≤ ${DIST_MAX} km (all)` : `≤ ${state.dist.toFixed(1)} km`;
     paintChips();
   }
   function readControls() {
@@ -479,6 +498,7 @@
     state.priv = $("private").checked;
     state.mixed = $("mixed").checked;
     state.types = new Set([...document.querySelectorAll("#types input:checked")].map((i) => i.value));
+    state.stations = new Set([...document.querySelectorAll("#stations input:checked")].map((i) => i.value));
     state.q = $("q").value.trim();
     state.colorBy = $("colorby").value;
     syncLabels();
@@ -487,13 +507,14 @@
     $("price").value = s.price; $("rating").value = s.rating; $("dist").value = s.dist; $("private").checked = s.priv; $("mixed").checked = s.mixed;
     (document.querySelector(`input[name=meals][value="${s.meals}"]`) || document.querySelector("input[name=meals]")).checked = true;
     document.querySelectorAll("#types input").forEach((i) => { i.checked = s.types.includes(i.value); });
+    document.querySelectorAll("#stations input").forEach((i) => { i.checked = s.stations.includes(i.value); });
     $("q").value = s.q; $("colorby").value = s.colorBy;
   }
   let timer = 0;
   const onChange = () => { readControls(); clearTimeout(timer); timer = setTimeout(() => { apply(); scheduleHash(); }, 16); };
   map.on("overlayadd overlayremove", () => scheduleHash());
 
-  // Shareable URL state: #map=<zoom>/<lat>/<lng>&r=<yadNo>&photo=<index> plus any non-default filters.
+  // Shareable URL state: #map=<zoom>/<lat>/<lng>&r=<yadNo>&photo=<index> plus any non-default filters (st = stations).
   let hashTimer = 0, lastHash = null;
   function hashString() {
     const c = map.getCenter(), parts = [`map=${map.getZoom()}/${c.lat.toFixed(5)}/${c.lng.toFixed(5)}`];
@@ -507,6 +528,7 @@
     if (state.priv) parts.push("private=1");
     if (state.mixed) parts.push("mixed=1");
     if (state.types.size !== typesPresent.length) parts.push(`type=${[...state.types].join(",")}`);
+    if (state.stations.size !== stationKeys.length) parts.push(`st=${[...state.stations].join(",")}`);
     if (state.q) parts.push(`q=${encodeURIComponent(state.q)}`);
     if (state.colorBy !== DEFAULTS.colorBy) parts.push(`color=${state.colorBy}`);
     if (!map.hasLayer(circleLayer)) parts.push("circle=0");
@@ -544,6 +566,7 @@
     s.priv = P.get("private") === "1";
     s.mixed = P.get("mixed") === "1";
     if (P.has("type")) s.types = P.get("type").split(",").filter((x) => typesPresent.includes(x));
+    if (P.has("st")) s.stations = P.get("st").split(",").filter((x) => stationKeys.includes(x));
     s.q = P.get("q") || "";
     if (P.get("color") === "price") s.colorBy = "price";
     writeControls(s);
@@ -554,7 +577,7 @@
     apply();
     const v = (P.get("map") || "").split("/").map(Number);
     if (v.length === 3 && v.every(Number.isFinite)) map.setView([v[1], v[2]], v[0], { animate: false });
-    else if (initial) map.fitBounds(L.latLng(STATION.lat, STATION.lng).toBounds(STATION.radiusKm * 2000 * 1.05));
+    else if (initial) zoomTo(s.stations.length ? s.stations : stationKeys);
     if (r) openPanel(r, true); else if (!panel.hidden) closePanel(true);
     if (r && Number.isInteger(ph)) openLightbox(r, null, ph); else if (!lb.hidden) closeLightbox();
     writeHash(false);

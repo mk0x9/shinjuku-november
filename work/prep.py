@@ -4,6 +4,8 @@ import glob, json, os, re
 
 WORK = os.path.dirname(os.path.abspath(__file__))
 BATCH = int(os.environ.get("BATCH", "8"))
+STAY_DAY = 15
+STATION_NAMES = {"shinjuku": "JR Shinjuku", "shibuya": "JR Shibuya", "gotanda": "JR Gotanda", "hamamatsucho": "JR/Monorail Hamamatsucho"}
 
 
 def cut(s, n):
@@ -18,8 +20,10 @@ def num(v):
         return None
 
 
-def cancel_info(text):
-    """'キャンセル料無料（2026年11月13日まで）' -> ('2026-11-13', rooms left); '予約時よりキャンセル料が発生' -> 'non-refundable'."""
+def cancel_info(text, rule=None):
+    """'キャンセル料無料（2026年11月13日まで）' -> ('2026-11-13', rooms left); '予約時よりキャンセル料が発生' -> 'non-refundable'.
+    Without either label, `rule` (the plan page's キャンセル規定, e.g. '1日前 宿泊料金の50% 当日 宿泊料金の100%') gives the
+    last free day: the day before the earliest charged day ('7日～1日前' counts from 7 days before; no-show only: the stay day)."""
     t = text or ""
     left = re.search(r"あと(\d+)部屋", t)
     m = re.search(r"キャンセル料無料（(\d{4})年(\d{1,2})月(\d{1,2})日まで）", t)
@@ -27,6 +31,10 @@ def cancel_info(text):
         c = f"{m.group(1)}-{int(m.group(2)):02d}-{int(m.group(3)):02d}"
     elif "予約時よりキャンセル料が発生" in t:
         c = "non-refundable"
+    elif rule:
+        days = [int(d) for d, pct in re.findall(r"(\d+)日(?:～\d+日)?前 宿泊料金の(\d+)%", rule) if int(pct) > 0]
+        days += [0] if re.search(r"当日 宿泊料金の[1-9]", rule) else []
+        c = f"2026-11-{STAY_DAY - max(days) - 1:02d}" if days else f"2026-11-{STAY_DAY:02d}"
     else:
         c = None
     return c, int(left.group(1)) if left else None
@@ -51,11 +59,11 @@ def own_photos(p, extra):
     return out
 
 
-def prep_property(p, extra_photos):
-    s = p["search"]
+def prep_property(p, extra_photos, cands):
+    s = {**p["search"], **cands.get(p["yadNo"], {})}  # current distances (the scrape-time copy predates the extra stations)
     plans = []
     for r in p["plans"]:
-        c, left = cancel_info(r.get("cancel"))
+        c, left = cancel_info(r.get("cancel"), r.get("cancelRule"))
         plans.append({
             "planCd": r["planCd"], "roomCd": r["roomTypeCd"], "planName": r["planName"], "meal": r["meal"], "total": r["total"],
             "cancel": c, "roomsLeft": left, "oneNight": bool(re.search(r"最大1泊", r.get("maxNightsNote") or "")),
@@ -68,7 +76,7 @@ def prep_property(p, extra_photos):
     return {
         "yadNo": p["yadNo"], "name": s["name"], "catch": s.get("catch"), "description": s.get("description"), "access": s.get("access"),
         "address": p.get("address"), "lat": p["coords"][0] if p.get("coords") else s["coords"][0],
-        "lng": p["coords"][1] if p.get("coords") else s["coords"][1], "distKm": s["distKm"],
+        "lng": p["coords"][1] if p.get("coords") else s["coords"][1], "station": s["station"], "distKm": s["distKm"],
         "rating": num(p.get("rating")) or s.get("rating"), "reviews": p.get("reviews") or s.get("reviews"),
         "scores": {k: num(p.get("r_" + k)) for k in ["room", "bath", "breakfast", "service", "clean"]},
         "highlyRated": p.get("highly_rated") or s.get("highlyRated"), "reviewHighlight": p.get("review_highlight"),
@@ -88,7 +96,7 @@ def enrich_input(q):
                                        "detail": cut(r["planDetail"], 700)})
     return {
         "yadNo": q["yadNo"], "name": q["name"], "catch": q["catch"], "description": cut(q["description"], 300),
-        "access": cut(q["access"], 200), "address": q["address"], "distance_km_from_jr_shinjuku": q["distKm"],
+        "access": cut(q["access"], 200), "address": q["address"], "nearest_station": STATION_NAMES[q["station"]], "distance_km": q["distKm"],
         "pr_text": cut(q["prText"], 400), "facilities": cut(q["facilities"], 200), "services": cut(q["services"], 150),
         "onsen": q["onsen"], "bath_notes": cut(q["bathNotes"], 200), "shared_baths_m_f_mixed": q["baths"],
         "room_counts_western_japanese_mixed_other_total": q["roomCounts"], "rating": q["rating"], "reviews": q["reviews"],
@@ -100,14 +108,18 @@ def enrich_input(q):
 def main():
     props = [json.load(open(f)) for f in sorted(glob.glob(f"{WORK}/data/props/*.json"))]
     extra = json.load(open(f"{WORK}/data/photos.json")) if os.path.exists(f"{WORK}/data/photos.json") else {}
-    prepped = sorted((prep_property(p, extra) for p in props if p["plans"]), key=lambda q: q["distKm"])
+    cands = json.load(open(f"{WORK}/data/candidates.json"))
+    prepped = sorted((prep_property(p, extra, cands) for p in props if p["plans"]), key=lambda q: q["distKm"])
     json.dump(prepped, open(f"{WORK}/data/prepped.json", "w"), ensure_ascii=False, indent=1)
     os.makedirs(f"{WORK}/enrich/in", exist_ok=True)
     for f in glob.glob(f"{WORK}/enrich/in/batch_*.json"):
         os.remove(f)
-    inputs = [enrich_input(q) for q in prepped]
+    # Only properties without English text yet (enrich/out/*.json)
+    done = {str(o["yadNo"]) for f in glob.glob(f"{WORK}/enrich/out/*.json") for o in json.load(open(f))}
+    inputs = [enrich_input(q) for q in prepped if q["yadNo"] not in done]
+    first = len(glob.glob(f"{WORK}/enrich/out/batch_*.json"))  # new batch numbers follow the finished ones
     for i in range(0, len(inputs), BATCH):
-        json.dump(inputs[i:i + BATCH], open(f"{WORK}/enrich/in/batch_{i // BATCH:02d}.json", "w"), ensure_ascii=False, indent=1)
+        json.dump(inputs[i:i + BATCH], open(f"{WORK}/enrich/in/batch_{first + i // BATCH:02d}.json", "w"), ensure_ascii=False, indent=1)
     print(f"properties={len(prepped)} plans={sum(len(q['plans']) for q in prepped)} batches={(len(inputs) + BATCH - 1) // BATCH} "
           f"photos={sum(len(q['photos']) for q in prepped)} price={min(r['total'] for q in prepped for r in q['plans'])}-"
           f"{max(r['total'] for q in prepped for r in q['plans'])}")

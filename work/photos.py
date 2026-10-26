@@ -1,11 +1,11 @@
 # Collect each property's own photos (src + alt) from its fetched Jalan page; the navigated detail page sometimes
 # hasn't rendered them yet. Run (sandbox disabled): browser-use < photos.py   ->  data/photos.json {yadNo: [[url, caption], ...]}
 exec(open("/Users/mikhail/code/shinjuku-november/work/jalan_lib.py").read())
-import html as htmllib
+import html as htmllib, os
 
 WORK = "/Users/mikhail/code/shinjuku-november/work"
-ids = json.load(open(f"{WORK}/data/inside.json"))
-out = {}
+out = json.load(open(f"{WORK}/data/photos.json")) if os.path.exists(f"{WORK}/data/photos.json") else {}
+ids = [y for y in json.load(open(f"{WORK}/data/inside.json")) if y not in out]
 tab = Tab()
 try:
     tab.goto("https://www.jalan.net/130000/")
@@ -32,4 +32,4 @@ try:
 finally:
     tab.close()
 json.dump(out, open(f"{WORK}/data/photos.json", "w"), ensure_ascii=False, indent=1)
-print({y: len(v) for y, v in out.items()})
+print({y: len(out[y]) for y in ids if y in out})

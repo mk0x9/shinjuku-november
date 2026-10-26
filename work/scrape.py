@@ -43,7 +43,7 @@ try:
             except Exception as e:
                 fails += 1
                 log(f"[{i + 1}/{len(todo)}] {y} attempt {attempt + 1} failed: {str(e)[:200]}")
-                time.sleep(20 * (attempt + 1))
+                time.sleep(45 * (attempt + 1))
         if fails >= 6:
             log("too many consecutive failures, stopping"); break
     log("DONE")

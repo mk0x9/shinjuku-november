@@ -1,11 +1,11 @@
-# Shinjuku stays: English enrichment task
+# Tokyo stays: English enrichment task
 
-You turn scraped Jalan (Japanese) data about places to stay near JR Shinjuku station into concise English fields for a map.
+You turn scraped Jalan (Japanese) data about places to stay near JR Shinjuku, Shibuya, Gotanda or Hamamatsucho station into concise English fields for a map.
 The trip: 2 adults, 1 room, night of Nov 15 2026, budget under ¥20,000 total.
 
 ## Input
 `work/enrich/in/batch_NN.json` is a JSON array of properties. Per property:
-- facts: `name`, `catch`, `description`, `access`, `address`, `distance_km_from_jr_shinjuku`, `pr_text`, `facilities`, `services`,
+- facts: `name`, `catch`, `description`, `access`, `address`, `nearest_station`, `distance_km`, `pr_text`, `facilities`, `services`,
   `onsen`, `bath_notes`, `shared_baths_m_f_mixed` (counts [men, women, mixed] for outdoor/indoor/sauna), `room_counts_...`,
   `rating`, `reviews`, `scores`, `highly_rated`, `review_highlight`, `photo_captions`
 - `rooms`: map `roomTypeCd -> {name, labels, style_label, facilities, detail}`
