@@ -5,7 +5,8 @@ import glob, json, os, re
 WORK = os.path.dirname(os.path.abspath(__file__))
 BATCH = int(os.environ.get("BATCH", "8"))
 STAY_DAY = 15
-STATION_NAMES = {"shinjuku": "JR Shinjuku", "shibuya": "JR Shibuya", "gotanda": "JR Gotanda", "hamamatsucho": "JR/Monorail Hamamatsucho"}
+STATION_NAMES = {s["key"]: f"JR {s['name']}" + (f" ({s['note']})" if s.get("note") else "")
+                 for s in json.load(open(os.path.join(WORK, "stations.json")))}
 
 
 def cut(s, n):
@@ -114,9 +115,16 @@ def main():
     os.makedirs(f"{WORK}/enrich/in", exist_ok=True)
     for f in glob.glob(f"{WORK}/enrich/in/batch_*.json"):
         os.remove(f)
-    # Only properties without English text yet (enrich/out/*.json)
-    done = {str(o["yadNo"]) for f in glob.glob(f"{WORK}/enrich/out/*.json") for o in json.load(open(f))}
-    inputs = [enrich_input(q) for q in prepped if q["yadNo"] not in done]
+    # Only properties without English text yet (enrich/out/*.json), or with rooms or plans it doesn't cover
+    done = {}
+    for f in sorted(glob.glob(f"{WORK}/enrich/out/*.json")):
+        for o in json.load(open(f)):
+            d = done.setdefault(str(o["yadNo"]), {"rooms": set(), "plans": set()})
+            d["rooms"] |= set(o.get("rooms") or {}); d["plans"] |= set(o.get("plans") or {})
+    def covered(q):
+        d = done.get(q["yadNo"])
+        return d and all(r["roomCd"] in d["rooms"] and r["planCd"] in d["plans"] for r in q["plans"])
+    inputs = [enrich_input(q) for q in prepped if not covered(q)]
     first = len(glob.glob(f"{WORK}/enrich/out/batch_*.json"))  # new batch numbers follow the finished ones
     for i in range(0, len(inputs), BATCH):
         json.dump(inputs[i:i + BATCH], open(f"{WORK}/enrich/in/batch_{first + i // BATCH:02d}.json", "w"), ensure_ascii=False, indent=1)

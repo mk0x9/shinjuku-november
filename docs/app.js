@@ -1,10 +1,11 @@
-/* Stays near JR Shinjuku, Shibuya, Gotanda and Hamamatsucho: pins, clusters, hover card, side panel, client-side filters. Data: window.STAYS (data.js). */
+/* Stays along the Yamanote line (Nippori to Hamamatsucho via Shinjuku): pins, clusters, hover card, side panel, client-side filters. Data: window.STAYS (data.js). */
 (() => {
   const DATA = window.STAYS || [];
   const IMG_BASE = window.IMG_BASE || "";
   const STATIONS = window.STATIONS || [];
   const RADIUS_KM = window.RADIUS_KM || 2;
   const stationOf = (r) => STATIONS.find((s) => s.key === r.station) || { name: "station" };
+  const stationName = (s) => `JR ${s.name}`;
   const TYPES = {
     business_hotel: { label: "Business hotel", color: "#2563eb" }, city_hotel: { label: "City hotel", color: "#4338ca" },
     capsule_hotel: { label: "Capsule / pod", color: "#0f766e" }, hostel: { label: "Hostel", color: "#15803d" },
@@ -57,7 +58,7 @@
     if (r.dist > state.dist + 1e-9) return false;
     if (state.rating > RATING_ANY && (r.rating || 0) < state.rating - 1e-9) return false;
     if (state.q) {
-      const hay = `${r.name} ${r.nameJp} ${r.summary || ""} ${r.access || ""} ${r.address || ""} ${stationOf(r).name}`.toLowerCase();
+      const hay = `${r.name} ${r.nameJp} ${r.summary || ""} ${r.access || ""} ${r.address || ""} ${stationOf(r).name} ${stationOf(r).jp || ""}`.toLowerCase();
       if (!hay.includes(state.q.toLowerCase())) return false;
     }
     return true;
@@ -89,7 +90,7 @@
   const baseTokens = Object.fromEntries(BASES.map(([k]) => [k, Object.assign(L.layerGroup(), { baseKey: k })]));
   const circleLayer = L.layerGroup();
   const layersCtl = L.control.layers(Object.fromEntries(BASES.map(([k, label]) => [label, baseTokens[k]])),
-    { "2 km circles &amp; stations": circleLayer }, { position: "bottomright" }).addTo(map);
+    { "2 km area &amp; stations": circleLayer }, { position: "bottomright" }).addTo(map);
   let baseKey = DEFAULT_BASE, shownBase = null, vector = null, vectorState = "pending", vectorOk = false, vectorWatch = 0;
   baseTokens[baseKey].addTo(map);
 
@@ -211,22 +212,50 @@
       .catch((e) => { clearTimeout(abort); vectorFailed(e.message || String(e)); });
   }
 
-  // The 2 km search radius around each station and the station markers (an overlay in the layer switcher, on by default).
-  // Clicking a station marker zooms to its circle.
+  // The searched area (within 2 km of any station) and the station markers: an overlay in the layer switcher, on by default.
+  // The shading is every circle drawn opaque in a translucent pane, so overlaps don't darken; the dashed outline is the
+  // parts of each circle that lie outside all the others. Clicking a station marker zooms to its circle.
+  map.createPane("ringfill").style.zIndex = 389;
+  map.getPane("ringfill").style.opacity = 0.05;
   map.createPane("ring").style.zIndex = 390;
+  const R = RADIUS_KM * 1000;
   const circleBounds = (keys) => keys.map((k) => STATIONS.find((s) => s.key === k)).filter(Boolean)
-    .map((s) => L.latLng(s.lat, s.lng).toBounds(RADIUS_KM * 2000 * 1.05)).reduce((a, b) => a.extend(b), L.latLngBounds([]));
+    .map((s) => L.latLng(s.lat, s.lng).toBounds(R * 2 * 1.05)).reduce((a, b) => a.extend(b), L.latLngBounds([]));
   // Keep the circles clear of the filter box when it is open on a wide screen.
   const leftPad = () => (window.innerWidth > 700 && !$("filters").classList.contains("collapsed") ? $("filters").offsetWidth + 20 : 10);
   const zoomTo = (keys) => { const b = circleBounds(keys); if (b.isValid()) map.fitBounds(b, { paddingTopLeft: [leftPad(), 10], paddingBottomRight: [10, 10] }); };
+  function outlineRuns(s) {
+    const n = 360, pts = [];
+    for (let i = 0; i < n; i++) {
+      const a = (2 * Math.PI * i) / n;
+      const p = L.latLng(s.lat + (R * Math.cos(a)) / 111320, s.lng + (R * Math.sin(a)) / (111320 * Math.cos((s.lat * Math.PI) / 180)));
+      pts.push(STATIONS.some((t) => t !== s && p.distanceTo([t.lat, t.lng]) < R) ? null : p);
+    }
+    const start = pts.indexOf(null); // begin at a covered point so no run wraps around the end of the list
+    if (start < 0) return [[...pts, pts[0]]];
+    const runs = [];
+    let run = [];
+    for (let k = 1; k <= n; k++) {
+      const p = pts[(start + k) % n];
+      if (p) run.push(p); else if (run.length) { runs.push(run); run = []; }
+    }
+    return runs;
+  }
   for (const s of STATIONS) {
-    L.circle([s.lat, s.lng], { radius: RADIUS_KM * 1000, pane: "ring", interactive: false,
-      color: "#111827", weight: 2, opacity: 0.7, dashArray: "6 6", fillColor: "#111827", fillOpacity: 0.04 }).addTo(circleLayer);
+    L.circle([s.lat, s.lng], { radius: R, pane: "ringfill", interactive: false, stroke: false, fillColor: "#111827", fillOpacity: 1 }).addTo(circleLayer);
+    for (const run of outlineRuns(s)) {
+      L.polyline(run, { pane: "ring", interactive: false, color: "#111827", weight: 2, opacity: 0.7, dashArray: "6 6" }).addTo(circleLayer);
+    }
+    const label = s.name + (s.note ? " · Monorail" : "");
     L.marker([s.lat, s.lng], { keyboard: false, zIndexOffset: -1000,
-      icon: L.divIcon({ className: "pin-wrap", iconSize: [0, 0], iconAnchor: [0, 0], html: `<div class="station">${s.label} Sta.</div>` }) })
-      .bindTooltip(`${s.name} station · centre of a ${RADIUS_KM} km circle · click to zoom`, { direction: "top", offset: [0, -14] })
+      icon: L.divIcon({ className: "pin-wrap", iconSize: [0, 0], iconAnchor: [0, 0], html: `<div class="station"><b>JR</b><span class="nm">${esc(label)}</span></div>` }) })
+      .bindTooltip(`${esc(stationName(s))} station${s.note ? ` (${esc(s.note)})` : ""} · click to zoom`, { direction: "top", offset: [0, -14] })
       .on("click", () => zoomTo([s.key])).addTo(circleLayer);
   }
+  // Station names only from zoom 14; further out just the JR badge.
+  const syncStationNames = () => map.getContainer().classList.toggle("far", map.getZoom() < 14);
+  map.on("zoomend", syncStationNames);
+  syncStationNames();
   circleLayer.addTo(map);
 
   const clusters = L.markerClusterGroup({
@@ -305,7 +334,7 @@
     return `<h2>${esc(r.name)}</h2><div class="jp">${esc(r.nameJp)}</div>
       <div class="badges"><span class="stars">★ ${r.rating ? r.rating.toFixed(1) : "—"}</span>
       <span class="muted">${r.reviews ? r.reviews.toLocaleString("en-US") + " reviews" : "no reviews yet"}</span>${badgeHtml(r)}
-      <span class="muted">· ${r.dist.toFixed(1)} km from ${esc(stationOf(r).name)}</span></div>${scoresHtml(r)}`;
+      <span class="muted">· ${r.dist.toFixed(1)} km from ${esc(stationName(stationOf(r)))}</span></div>${scoresHtml(r)}`;
   }
   function roomLine(p) {
     return [p.occupancy === "shared" ? "Shared" : null, p.bedding, p.size, BATHROOM[p.bathroom] ?? p.bathroom]
@@ -470,9 +499,14 @@
     esc(TYPES[t].label)} <small>${DATA.filter((r) => r.type === t).length}</small></span></label>`).join("");
   $("stations").innerHTML = STATIONS.map((s) => `<label class="chip"><input type="checkbox" value="${s.key}" checked><span data-color="#111827">${
     esc(s.name)} <small>${DATA.filter((r) => r.station === s.key).length}</small></span></label>`).join("");
-  $("zoom").innerHTML = "Zoom to: " + STATIONS.map((s) => `<button class="link-btn" data-zoom="${s.key}">${esc(s.name.replace(/^JR /, ""))}</button>`).join("") +
-    `<button class="link-btn" data-zoom="all">All</button>`;
-  $("zoom").onclick = (e) => { const b = e.target.closest("[data-zoom]"); if (b) zoomTo(b.dataset.zoom === "all" ? stationKeys : [b.dataset.zoom]); };
+  // All / none set every station chip; "zoom" fits the map to the checked stations.
+  $("station-tools").onclick = (e) => {
+    const b = e.target.closest("[data-st]");
+    if (!b) return;
+    if (b.dataset.st === "zoom") { zoomTo([...state.stations]); return; }
+    document.querySelectorAll("#stations input").forEach((i) => { i.checked = b.dataset.st === "all"; });
+    onChange();
+  };
   function paintChips() {
     document.querySelectorAll("#types input, #stations input").forEach((i) => {
       const s = i.nextElementSibling;

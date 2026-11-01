@@ -6,12 +6,8 @@ WORK = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(WORK)
 IMG_BASE = "https://cdn.jalan.jp/jalan/images/"  # stripped from photo URLs to keep data.js small
 RADIUS_KM = 2
-STATIONS = [  # same coordinates as discover.py
-    {"key": "shinjuku", "name": "JR Shinjuku", "label": "<b>JR</b> Shinjuku", "lat": 35.6896, "lng": 139.7006},
-    {"key": "shibuya", "name": "JR Shibuya", "label": "<b>JR</b> Shibuya", "lat": 35.6580, "lng": 139.7016},
-    {"key": "gotanda", "name": "JR Gotanda", "label": "<b>JR</b> Gotanda", "lat": 35.6262, "lng": 139.7236},
-    {"key": "hamamatsucho", "name": "Hamamatsucho", "label": "<b>JR</b> Hamamatsucho · Monorail", "lat": 35.6555, "lng": 139.7568},
-]
+# Yamanote line stations, Nippori counter-clockwise to Hamamatsucho (shared with discover.py and prep.py)
+STATIONS = json.load(open(os.path.join(WORK, "stations.json")))
 # Gender-restricted plans (room name, plan name or room text). "女性専用フロア" (a women's floor) is not a restriction.
 WOMEN = re.compile(r"女性限定|女性[２2]名限定|女性のみ|女性用|女性専用(?!の?フロア)")
 MEN = re.compile(r"男性限定|男性のみ|男性用|男性専用(?!の?フロア)")

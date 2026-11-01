@@ -1,13 +1,14 @@
-# Stays near Shinjuku, Shibuya, Gotanda and Hamamatsucho, Nov 15 2026
+# Stays along the Yamanote line, Nippori to Hamamatsucho, Nov 15 2026
 
-Static map of every place to stay on jalan.net within 2 km (straight line) of JR Shinjuku, JR Shibuya, JR Gotanda or
-Hamamatsucho (JR and the Tokyo Monorail terminal) station with a room for 2 adults
-on the night of Nov 15 2026 (check-out Nov 16) under ¥20,000 for the room, tax included. Collected from jalan.net on 2026-10-25 and 26.
+Static map of every place to stay on jalan.net within 2 km (straight line) of a JR Yamanote line station from Nippori
+counter-clockwise to Hamamatsucho, where the Tokyo Monorail from Haneda ends (22 stations, via Ikebukuro, Shinjuku, Shibuya
+and Meguro; list in `work/stations.json`), with a room for 2 adults on the night of Nov 15 2026 (check-out Nov 16) under
+¥20,000 for the room, tax included. Collected from jalan.net on 2026-11-01.
 
 Live: https://mk0x9.github.io/shinjuku-november/
 
 Pins show the cheapest matching plan and the Jalan rating; hover for photos and details, click for all plans with booking links,
-click a photo for the gallery. Filters: station, max price, min rating, distance from the station, meals, accommodation type, private rooms only
+click a photo for the gallery. Filters: nearest station, max price, min rating, distance from that station, meals, accommodation type, private rooms only
 (no capsules or dorms), and hiding women-only and men-only plans. The URL hash keeps the map view, open property and filters,
 so links can be shared.
 
